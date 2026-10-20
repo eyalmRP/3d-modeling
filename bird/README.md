@@ -35,7 +35,7 @@ watertight.
   Bambu Studio, OrcaSlicer and PrusaSlicer all work this way. Eight colors are used; if you have
   fewer slots, combine parts that can share a filament (e.g. orange feet with the red beak,
   navy with black).
-* **Size:** 100% scale is about 107 mm tall (78 x 144 mm footprint including beak and tail).
+* **Size:** 100% scale is about 113 mm tall, 82 mm wide and 143 mm from beak tip to tail tip.
   Scale the whole object, never individual parts.
 * **Orientation:** as exported, standing on its feet.
 * **Supports:** needed under the beak, the tail, the wing tips, the belly and the brows. Tree

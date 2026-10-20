@@ -31,7 +31,13 @@ def _mesh_object(name, mesh, collection, mat=None):
     return ob
 
 
+def _linear(c):
+    """sRGB display color -> Blender's linear color values."""
+    return tuple(v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4 for v in c)
+
+
 def _material(name, rgb):
+    rgb = _linear(rgb)
     mat = bpy.data.materials.new(name)
     mat.use_nodes = True
     bsdf = mat.node_tree.nodes["Principled BSDF"]
@@ -79,14 +85,13 @@ def build(meshes, whole, out):
     scene.cycles.samples = 32
     scene.cycles.use_denoising = True
     scene.view_settings.view_transform = "Standard"
-    scene.view_settings.exposure = -0.45
     world = bpy.data.worlds.new("World")
     scene.world = world
     world.use_nodes = True
     world.node_tree.nodes["Background"].inputs["Color"].default_value = (0.96, 0.95, 0.92, 1)
-    world.node_tree.nodes["Background"].inputs["Strength"].default_value = 0.75
+    world.node_tree.nodes["Background"].inputs["Strength"].default_value = 0.6
     sun = bpy.data.objects.new("Key", bpy.data.lights.new("Key", "SUN"))
-    sun.data.energy = 2.6
+    sun.data.energy = 2.4
     scene.collection.objects.link(sun)
 
     bb = np.asarray(whole.bounds)
