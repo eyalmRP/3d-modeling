@@ -1,10 +1,11 @@
 # Multi-color bird figure
 
-A print-ready, multi-color version of the cartoon hornbill, posed like the turnaround
-sheet in `ref/reference_sheet.png`: standing, head facing forward with the beak drooping,
-both wings folded, tail raised. The sculpt itself comes from a separate STL of the same
-character (not stored here), whose original pose has the head turned back, one wing raised
-and a very long tail.
+A print-ready, multi-color version of the cartoon hornbill, re-posed to match the side view
+of the turnaround sheet in `ref/reference_sheet.png`: standing upright, head facing forward
+with the beak drooping, both wings folded, the three-feather tail fanned and raised behind.
+The sculpt itself comes from a separate STL of the same character (not stored here), whose
+original pose has the head turned back over its shoulder, one wing raised and a very long
+tail. `repose_side_compare_v2.png` shows the sculpt before and after next to the sheet.
 
 ## Output (`output/`, generated)
 
@@ -54,8 +55,10 @@ python build_print.py path/to/sculpt.stl --out output --pitch 0.25
 
 * `stl_repose.py` aligns the sculpt to its own symmetry plane, voxelizes it, then cuts it into
   rigid pieces and re-poses them: the half with the folded wing is mirrored (removing the raised
-  wing and evening out the legs), the head is turned forward onto a new neck, the tail is
-  re-aimed and shortened, and the feet are turned to point forward.
+  wing and evening out the legs), the upper body is leaned back to stand upright, the head is
+  turned forward onto a new neck, the tail is re-aimed, shortened and turned so its feather fan
+  shows from the side, and the feet are turned to point forward. The pose settings are the
+  `POSE` dictionary at the top of `build_print.py`.
 * `paint.py` colors the surface with rules written in each piece's own frame (eyeball spheres,
   lid caps, beak crease, wing outline and bands, tail bands, etc.), computed on the original
   sculpt and carried through the re-pose.

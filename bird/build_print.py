@@ -22,11 +22,16 @@ import paint
 import stl_repose as R
 
 POSE = {
-    "head_pitch": 25, "head_centre": [0, -22, 84], "neck_radius": 6.6, "neck_via": [[0, -23.5, 62]],
-    "tail_axis": [0, 0.593, 0.805], "tail_root": [0, 22, 27], "tail_scale": [0.58, 0.9],
-    "foot_twist": -47, "foot_shift": 4.0,
+    # head turned forward, beak pitched down like the sheet's side view
+    "head_pitch": 25, "neck_offset": [-0.9, 11.0, 22.0], "neck_radius": 6.6, "neck_via": [[0, -1.0, 12]],
+    # upper body leaned back so it stands upright like the sheet
+    "body_tilt": 13, "body_pivot": [-5, 21],
+    # tail: steeper, shorter, narrower, and turned so the feather fan shows from the side
+    "tail_axis": [0, 0.56, 0.83], "tail_root": [0, 22, 27], "tail_scale": [0.7, 0.6], "tail_roll": 90,
+    # feet turned to point forward and moved back under the body
+    "foot_twist": -47, "foot_shift": 7.0,
 }
-BOUNDS = ((-42.0, 42.0), (-82.0, 70.0), (0.0, 110.0))
+BOUNDS = ((-45.0, 45.0), (-78.0, 78.0), (0.0, 118.0))
 
 
 def log(msg, t0=[time.time()]):
@@ -154,7 +159,9 @@ def main():
         src = R.Source(sculpt, args.src_pitch)
         np.savez(src_path, field=src.field, lo=src.lo, pitch=src.pitch)
 
-    union_path = os.path.join(cache, f"union_{args.pitch}.npz")
+    import hashlib
+    tag = hashlib.md5(json.dumps(POSE, sort_keys=True).encode()).hexdigest()[:8]
+    union_path = os.path.join(cache, f"union_{args.pitch}_{tag}.npz")
     if os.path.exists(union_path):
         d = np.load(union_path)
         union, axes = d["union"], (d["xs"], d["ys"], d["zs"])

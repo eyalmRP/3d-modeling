@@ -185,6 +185,12 @@ def raised_wing_scraps(p):
     return (x < 12.0) & (z > 26.0) & (z < 60.0) & (y < front - 0.5)
 
 
+def rot_about(axis, angle):
+    a = unit(axis)
+    K = np.array([[0, -a[2], a[1]], [a[2], 0, -a[0]], [-a[1], a[0], 0]])
+    return np.eye(3) + np.sin(angle) * K + (1 - np.cos(angle)) * K @ K
+
+
 def tail_region(p):
     d = (p - TAIL_ROOT) @ unit(TAIL_AXIS)
     x, z = p[..., 0], p[..., 2]
@@ -218,18 +224,38 @@ class Pose:
 
     def __init__(self, params):
         self.p = params
+        self.tilt = np.radians(params.get("body_tilt", 0.0))       # lean the upper body back
+        self.pivot = np.array([0.0, *params.get("body_pivot", (-5.0, 21.0))])
+        neck_base = self.body_fwd(np.array([0.0, NECK_TOP[1] - 1.5, 51.0]))
         self.Rh = head_rotation(params["head_pitch"])
-        self.c_new = np.asarray(params["head_centre"], float)
-        self.socket = self.c_new + self.Rh @ (NECK_TOP - HEAD_C)
-        self.neck_pts = [np.array([0.0, NECK_TOP[1] - 1.5, 51.0]),
-                         *[np.asarray(q, float) for q in params.get("neck_via", [])], self.socket]
+        socket_off = self.Rh @ (NECK_TOP - HEAD_C)
+        # the head sits so that its socket lands at neck_base + neck_offset
+        self.socket = neck_base + np.asarray(params["neck_offset"], float)
+        self.c_new = self.socket - socket_off
+        via = [neck_base + np.asarray(q, float) for q in params.get("neck_via", [])]
+        self.neck_pts = [neck_base, *via, self.socket]
         self.Rt = rot_between(TAIL_AXIS, unit(params["tail_axis"]))
-        self.root_new = np.asarray(params["tail_root"], float)
-        self.joints = [(self.neck_pts[0] + [0, 0, 3.0], 11.0), (self.socket, 11.0), (self.root_new, 10.0),
-                       (np.array([0.0, -36.0, 46.5]), 7.0)]
+        self.root_new = self.body_fwd(np.asarray(params["tail_root"], float))
+        roll = np.radians(params.get("tail_roll", 0.0))
+        self.Rroll = rot_about(unit(params["tail_axis"]), roll)
+        self.joints = [(neck_base + [0, 0, 3.0], 11.0), (self.socket, 11.0), (self.root_new, 10.0),
+                       (self.body_fwd(np.array([0.0, -36.0, 46.5])), 7.0)]
+
+    def body_fwd(self, p):
+        """Where a source point of the upper body ends up after the tilt."""
+        t = self.tilt
+        d = p - self.pivot
+        return self.pivot + np.array([d[0], d[1] * np.cos(t) + d[2] * np.sin(t),
+                                      -d[1] * np.sin(t) + d[2] * np.cos(t)])
 
     def body_src(self, P):
         S = P.copy()
+        if self.tilt:                                   # undo the lean, blended in over the hips
+            w = np.clip((S[..., 2] - (self.pivot[2] - 3.0)) / 6.0, 0.0, 1.0)
+            t = -self.tilt * w
+            dy, dz = S[..., 1] - self.pivot[1], S[..., 2] - self.pivot[2]
+            S[..., 1] = self.pivot[1] + dy * np.cos(t) + dz * np.sin(t)
+            S[..., 2] = self.pivot[2] - dy * np.sin(t) + dz * np.cos(t)
         S[..., 0] = np.abs(S[..., 0])
         twist = np.radians(self.p.get("foot_twist", 0.0))
         if twist:
@@ -240,7 +266,7 @@ class Pose:
             S[..., 0], S[..., 1] = ax + c * dx - s_ * dy, ay + s_ * dx + c * dy
         shift = self.p.get("foot_shift", 0.0)          # slide the feet back, leaning the shins
         if shift:
-            S[..., 1] -= shift * np.clip((17.0 - S[..., 2]) / 12.0, 0.0, 1.0)
+            S[..., 1] -= shift * np.clip((21.0 - S[..., 2]) / 17.0, 0.0, 1.0)
         return S
 
     def head_src(self, P):
@@ -249,7 +275,7 @@ class Pose:
     def tail_src(self, P):
         s_len, s_wid = self.p["tail_scale"]
         a = unit(TAIL_AXIS)
-        Q = (P - self.root_new) @ self.Rt
+        Q = ((P - self.root_new) @ self.Rroll) @ self.Rt
         Q = Q + ((1.0 / s_len) - 1.0) * (Q @ a)[..., None] * a
         Q = Q - (1.0 - 1.0 / s_wid) * (Q - (Q @ a)[..., None] * a)
         return Q + TAIL_ROOT
