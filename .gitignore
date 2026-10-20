@@ -1,5 +1,6 @@
 __pycache__/
 *.pyc
 bird/output/
+bird/output_smooth/
 *.stl
 !bird/ref/*.stl

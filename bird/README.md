@@ -47,20 +47,23 @@ watertight.
 ## Rebuilding
 
 Requires Python 3.11 with `bpy` (Blender as a module), `trimesh`, `scikit-image`, `scipy`,
-`matplotlib` and `manifold3d`.
+`matplotlib`, `manifold3d` and `libigl`.
 
 ```
-python build_print.py path/to/sculpt.stl --out output --pitch 0.25
+python build_smooth.py path/to/sculpt.stl --out output_smooth --pitch 0.25
 ```
 
-* `stl_repose.py` aligns the sculpt to its own symmetry plane, voxelizes it, then cuts it into
-  rigid pieces and re-poses them: the half with the folded wing is mirrored (removing the raised
-  wing and evening out the legs), the upper body is leaned back to stand upright, the head is
-  turned forward onto a new neck, the tail is re-aimed, shortened and turned so its feather fan
-  shows from the side, and the feet are turned to point forward. The pose settings are the
-  `POSE` dictionary at the top of `build_print.py`.
-* `paint.py` colors the surface with rules written in each piece's own frame (eyeball spheres,
-  lid caps, beak crease, wing outline and bands, tail bands, etc.), computed on the original
-  sculpt and carried through the re-pose.
-* `build_print.py` turns the colored surface into one solid per color, checks them and exports.
-* `blender_parts.py` builds the Blender scene and the preview renders.
+* `sdf_source.py` turns the sculpt into an exact signed-distance field (libigl), so the
+  re-posed surface stays as smooth as the original sculpt.
+* `stl_repose.py` holds the re-pose transforms: the sculpt is aligned to its own symmetry
+  plane, the half with the folded wing is mirrored (removing the raised wing and evening out
+  the legs), the upper body is leaned back to stand upright, the head is turned forward with a
+  shorter, more curved beak on a new slimmer neck, the tail is re-aimed, shortened and turned so
+  its feather fan shows from the side, and the legs are lengthened with the feet turned forward.
+* `sdf_pipeline.py` samples each piece through its transform, joins the pieces with smooth
+  (filleted) unions, adds the cheek tufts, and paints with smooth color fields (eyeball spheres,
+  lid caps, brow arcs, beak crease, wing outline and bands, tail bands), so color borders are
+  clean curves. Each color's solid is the part of the figure where that color's field wins.
+* `build_smooth.py` holds the pose, tuft and paint settings, extracts the parts, checks them
+  and exports. `blender_parts.py` builds the Blender scene and the preview renders.
+* `check_parts.py` reports watertightness and thin pieces of exported STLs.

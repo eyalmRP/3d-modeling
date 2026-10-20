@@ -226,9 +226,11 @@ class Pose:
         self.p = params
         self.tilt = np.radians(params.get("body_tilt", 0.0))       # lean the upper body back
         self.pivot = np.array([0.0, *params.get("body_pivot", (-5.0, 21.0))])
+        self.sh = params.get("head_scale", 1.0)
+        self.legs = params.get("leg_stretch", (0.0, 6.0, 16.0))      # (extra mm, from z, to z)
         neck_base = self.body_fwd(np.array([0.0, NECK_TOP[1] - 1.5, 51.0]))
         self.Rh = head_rotation(params["head_pitch"])
-        socket_off = self.Rh @ (NECK_TOP - HEAD_C)
+        socket_off = self.sh * (self.Rh @ (NECK_TOP - HEAD_C))
         # the head sits so that its socket lands at neck_base + neck_offset
         self.socket = neck_base + np.asarray(params["neck_offset"], float)
         self.c_new = self.socket - socket_off
@@ -242,14 +244,23 @@ class Pose:
                        (self.body_fwd(np.array([0.0, -36.0, 46.5])), 7.0)]
 
     def body_fwd(self, p):
-        """Where a source point of the upper body ends up after the tilt."""
+        """Where a source point of the upper body ends up after the tilt and leg stretch."""
         t = self.tilt
         d = p - self.pivot
-        return self.pivot + np.array([d[0], d[1] * np.cos(t) + d[2] * np.sin(t),
-                                      -d[1] * np.sin(t) + d[2] * np.cos(t)])
+        q = self.pivot + np.array([d[0], d[1] * np.cos(t) + d[2] * np.sin(t),
+                                   -d[1] * np.sin(t) + d[2] * np.cos(t)])
+        return q + [0.0, 0.0, self.legs[0]]
+
+    def unstretch(self, z):
+        extra, za, zb = self.legs
+        if not extra:
+            return z
+        return np.where(z <= za, z, np.where(z >= zb + extra, z - extra,
+                                             za + (z - za) * (zb - za) / (zb + extra - za)))
 
     def body_src(self, P):
         S = P.copy()
+        S[..., 2] = self.unstretch(S[..., 2])
         if self.tilt:                                   # undo the lean, blended in over the hips
             w = np.clip((S[..., 2] - (self.pivot[2] - 3.0)) / 6.0, 0.0, 1.0)
             t = -self.tilt * w
@@ -257,6 +268,9 @@ class Pose:
             S[..., 1] = self.pivot[1] + dy * np.cos(t) + dz * np.sin(t)
             S[..., 2] = self.pivot[2] - dy * np.sin(t) + dz * np.cos(t)
         S[..., 0] = np.abs(S[..., 0])
+        narrow = self.p.get("leg_narrow", 0.0)           # bring the legs in towards the midline
+        if narrow:
+            S[..., 0] += narrow * np.clip((24.0 - S[..., 2]) / 14.0, 0.0, 1.0)
         twist = np.radians(self.p.get("foot_twist", 0.0))
         if twist:
             ax, ay = ANKLE
@@ -266,11 +280,23 @@ class Pose:
             S[..., 0], S[..., 1] = ax + c * dx - s_ * dy, ay + s_ * dx + c * dy
         shift = self.p.get("foot_shift", 0.0)          # slide the feet back, leaning the shins
         if shift:
-            S[..., 1] -= shift * np.clip((21.0 - S[..., 2]) / 17.0, 0.0, 1.0)
+            za, zb = self.p.get("foot_shift_zone", (4.0, 21.0))
+            S[..., 1] -= shift * np.clip((zb - S[..., 2]) / (zb - za), 0.0, 1.0)
         return S
 
     def head_src(self, P):
-        return (P - self.c_new) @ self.Rh + HEAD_C
+        S = ((P - self.c_new) @ self.Rh) / self.sh + HEAD_C
+        sb, bend = self.p.get("beak_scale", 1.0), self.p.get("beak_bend", 0.0)
+        if sb == 1.0 and not bend:
+            return S
+        f, l, u = head_frame()
+        d = S - HEAD_C
+        hx, hy, hz = d @ l, -(d @ f), d @ u               # head-local, -y forward
+        y0, L = -4.0, 56.0
+        ahead = np.maximum(y0 - hy, 0.0)                   # how far out along the beak
+        hy_src = np.where(hy < y0, y0 - ahead / sb, hy)
+        hz_src = hz + bend * (np.maximum(y0 - hy_src, 0.0) / L) ** 2
+        return HEAD_C + hx[..., None] * l - hy_src[..., None] * f + hz_src[..., None] * u
 
     def tail_src(self, P):
         s_len, s_wid = self.p["tail_scale"]
@@ -282,9 +308,10 @@ class Pose:
 
     def neck_sdf(self, P):
         d = np.full(P.shape[:-1], 1e9)
-        r = self.p["neck_radius"]
-        for a, b in zip(self.neck_pts[:-1], self.neck_pts[1:]):
-            d = np.minimum(d, capsule_sdf(P, a, b, r, r))
+        r = np.atleast_1d(self.p["neck_radius"]).astype(float)
+        radii = np.interp(np.linspace(0, 1, len(self.neck_pts)), np.linspace(0, 1, len(r)), r)
+        for i, (a, b) in enumerate(zip(self.neck_pts[:-1], self.neck_pts[1:])):
+            d = np.minimum(d, capsule_sdf(P, a, b, radii[i], radii[i + 1]))
         return d
 
     def pieces(self, src, P, pitch):
