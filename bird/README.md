@@ -52,6 +52,7 @@ Requires Python 3.11 with `bpy` (Blender as a module), `trimesh`, `scikit-image`
 
 ```
 python build_smooth.py path/to/sculpt.stl --out output_smooth --pitch 0.25
+python fit_to_sheet.py output_smooth --out output_fit
 ```
 
 * `sdf_source.py` turns the sculpt into an exact signed-distance field (libigl), so the
@@ -71,4 +72,12 @@ python build_smooth.py path/to/sculpt.stl --out output_smooth --pitch 0.25
   figure where that color's field wins.
 * `build_smooth.py` holds the pose, tuft and paint settings, extracts the parts, checks them
   and exports. `blender_parts.py` builds the Blender scene and the preview renders.
+* `fit_to_sheet.py` then moves the vertices of all the color parts so the figure's side and
+  front outlines land on the sheet's. Each outline point is moved onto the nearest sheet
+  outline point that faces the same way, the moves are spread smoothly over the whole figure,
+  and every part is moved by the same displacement, so the parts still fit together exactly and
+  stay watertight. The head and beak, the tail tips, and the legs and feet are left as they
+  are: they already match, or the sheet draws them in a way a single solid cannot follow
+  (open beak, three separate tail feathers, two legs side by side).
+  `before_now_vs_sheet.png` and `closeups_before_now.png` show the result.
 * `check_parts.py` reports watertightness and thin pieces of exported STLs.

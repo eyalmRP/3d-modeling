@@ -4,3 +4,4 @@ bird/output/
 bird/output_smooth/
 *.stl
 !bird/ref/*.stl
+bird/output_fit/
