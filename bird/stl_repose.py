@@ -236,8 +236,12 @@ class Pose:
         self.c_new = self.socket - socket_off
         via = [neck_base + np.asarray(q, float) for q in params.get("neck_via", [])]
         self.neck_pts = [neck_base, *via, self.socket]
+        if "neck_path" in params:                        # explicit neck axis, (y, z) on the midline
+            self.neck_pts = [np.array([0.0, y, z]) for y, z in params["neck_path"]]
         self.Rt = rot_between(TAIL_AXIS, unit(params["tail_axis"]))
         self.root_new = self.body_fwd(np.asarray(params["tail_root"], float))
+        if "tail_root_target" in params:                 # where the tail root lands, given directly
+            self.root_new = np.asarray(params["tail_root_target"], float)
         roll = np.radians(params.get("tail_roll", 0.0))
         self.Rroll = rot_about(unit(params["tail_axis"]), roll)
         self.joints = [(neck_base + [0, 0, 3.0], 11.0), (self.socket, 11.0), (self.root_new, 10.0),
@@ -260,6 +264,18 @@ class Pose:
 
     def body_src(self, P):
         S = P.copy()
+        rs = self.p.get("rump_stretch")                 # lengthen the folded wing tips and rump backwards
+        if rs:
+            y0, a, z0, z1, z2, z3 = rs
+            z = S[..., 2]
+            w = np.clip((z - z0) / (z1 - z0), 0.0, 1.0) * np.clip((z3 - z) / (z3 - z2), 0.0, 1.0)
+            y = S[..., 1]
+            S[..., 1] = np.where(y > y0, y0 + (y - y0) / (1.0 + a * w), y)
+        hd = self.p.get("hallux_drop")                  # lower the back toes onto the ground
+        if hd:
+            ya, yb, za, zb, drop = hd
+            w = np.clip((S[..., 1] - ya) / (yb - ya), 0.0, 1.0) * np.clip((zb - S[..., 2]) / (zb - za), 0.0, 1.0)
+            S[..., 2] = S[..., 2] + drop * w
         S[..., 2] = self.unstretch(S[..., 2])
         if self.tilt:                                   # undo the lean, blended in over the hips
             w = np.clip((S[..., 2] - (self.pivot[2] - 3.0)) / 6.0, 0.0, 1.0)
@@ -310,9 +326,11 @@ class Pose:
         d = np.full(P.shape[:-1], 1e9)
         r = np.atleast_1d(self.p["neck_radius"]).astype(float)
         radii = np.interp(np.linspace(0, 1, len(self.neck_pts)), np.linspace(0, 1, len(r)), r)
+        xs = self.p.get("neck_xscale", 1.0)              # > 1: narrower side to side than front to back
+        Q = P * np.array([xs, 1.0, 1.0])
         for i, (a, b) in enumerate(zip(self.neck_pts[:-1], self.neck_pts[1:])):
-            d = np.minimum(d, capsule_sdf(P, a, b, radii[i], radii[i + 1]))
-        return d
+            d = np.minimum(d, capsule_sdf(Q, a, b, radii[i], radii[i + 1]))
+        return d / xs
 
     def pieces(self, src, P, pitch):
         """Occupancy-like field of each piece at points P (any shape [..., 3])."""

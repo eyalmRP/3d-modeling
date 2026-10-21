@@ -23,6 +23,18 @@ def smin(a, b, k):
     return b * (1 - h) + a * h - k * h * (1 - h)
 
 
+def smax(a, b, k):
+    return -smin(-a, -b, k)
+
+
+def rounded_slab(u, z, half, bottom, rc):
+    """Signed distance to the region |u| < half, z > bottom, with its bottom edges rounded by rc."""
+    qx = np.abs(u) - (half - rc)
+    qz = (bottom + rc) - z
+    out = np.hypot(np.maximum(qx, 0.0), np.maximum(qz, 0.0))
+    return out + np.minimum(np.maximum(qx, qz), 0.0) - rc
+
+
 def poly_sdf(pts, poly):
     """Signed distance (negative inside) from 2D points to a closed polygon."""
     poly = np.asarray(poly, float)
@@ -90,9 +102,13 @@ def paint_head(H, cfg):
     dist = np.linalg.norm(rad, axis=-1) + 1e-9
     e = dist - er
     ax = np.abs(x)
-    eye = np.maximum(np.maximum(e - 0.4, 3.0 - side * x), (y - ec[..., 1]) - 0.35 * er)
+    grow = cfg.get("eye_grow", 0.4)                   # white spreads past the eyeball below the lid
+    lid_grow = cfg.get("lid_grow", grow)                # the lid covers the eyeball (and this much more)
+    back = (y - ec[..., 1]) - cfg.get("eye_back", 0.35) * er
     n_lid = R.unit(cfg["lid_normal"])
-    lidcap = np.maximum(eye, cfg["lid_level"] * er - rad @ n_lid)
+    above = cfg["lid_level"] * er - rad @ n_lid         # negative above the lid line
+    lidcap = np.maximum(np.maximum(np.maximum(e - lid_grow, 3.0 - side * x), back), above)
+    eye = np.maximum(np.maximum(np.maximum(e - grow, 3.0 - side * x), back), -above)
     g = np.stack([side * cfg["gaze"][0], np.full_like(x, cfg["gaze"][1]), np.full_like(x, cfg["gaze"][2])], -1)
     g /= np.linalg.norm(g, axis=-1, keepdims=True)
     cosang = np.einsum("...i,...i->...", rad, g) / dist
@@ -102,7 +118,9 @@ def paint_head(H, cfg):
     q = np.sqrt(((y + 9.0) / 14.0) ** 2 + ((z - 10.5) / 8.5) ** 2)
     yellow = np.maximum(np.maximum(beak, 2.8 - ax), np.maximum(1.5 - z, (q - 1.0) * 8.0))
     throat = np.maximum(np.maximum(z + 9.0, y + 2.0), ax - 10.0)
-    lids = np.maximum(np.maximum(e - 2.4, (y - ec[..., 1]) - 2.0), 2.0 - side * x)
+    lids = np.maximum(np.maximum(e - lid_grow - cfg.get("lid_ring", 2.0),
+                                 (y - ec[..., 1]) - cfg.get("lid_back", 2.0)),
+                      2.0 - side * x)
     rr = np.linalg.norm(H, axis=-1)
     tuft = np.maximum(np.maximum(16.0 - y, 20.5 - rr), np.maximum(ax - 12.0, z - 6.0))
     bz = cfg["brow_z"]
@@ -112,11 +130,39 @@ def paint_head(H, cfg):
                           (ec[..., 2] + cfg["brow_cap_z"]) - z)          # black brow arc over each eye
     brow_cap = np.maximum(brow_cap, (y - ec[..., 1]) - cfg["brow_cap_back"])
     return partition([("black", brow_cap), ("blue", lidcap), ("black", pupil), ("white", eye), ("yellow", yellow),
-                      ("red", beak), ("red", jaw), ("black", brows), ("navy", tuft),
+                      ("red", beak), ("red", jaw), ("black", brows), ("purple", tuft),
                       ("blue", lids), ("white", throat), ("purple", None)])
 
 
-def paint_body(S, cfg):
+def paint_body_target(S, P, cfg):
+    """Body colors laid out in the re-posed (target) side view: wing with a scalloped white band
+    between the purple coverts and the navy primaries, white chest and belly, purple back."""
+    shp = P.shape[:-1]
+    ax = np.abs(P[..., 0])
+    yz = np.stack([P[..., 1].ravel(), P[..., 2].ravel()], 1)
+    legs = S[..., 2] - cfg["leg_top"]
+    # the wing wraps further forward on the outer side of the body, so it shows from the front too
+    xf, kf = cfg.get("wing_wrap", (99.0, 0.0))
+    yz_w = yz + np.stack([(kf * np.maximum(ax - xf, 0.0)).ravel(), np.zeros(ax.size)], 1)
+    wing = np.maximum(poly_sdf(yz_w, cfg["wing_t"]).reshape(shp), cfg["wing_x"] - ax)
+    (ya, za), (yb, zb), hw, amp, period = cfg["band_t"]
+    t = np.array([yb - ya, zb - za]) / np.hypot(yb - ya, zb - za)
+    n_dir = np.array([-t[1], t[0]])
+    dy, dz = P[..., 1] - ya, P[..., 2] - za
+    s_ = dy * t[0] + dz * t[1]
+    n = dy * n_dir[0] + dz * n_dir[1]                     # > 0 towards the coverts
+    upper = hw - amp * np.abs(np.sin(np.pi * s_ / period))
+    lower = -hw - amp * np.abs(np.sin(np.pi * (s_ / period + 0.5)))
+    navy = np.maximum(wing, n - lower)
+    band = np.maximum(wing, np.maximum(lower - n, n - upper))
+    chest = poly_sdf(yz, cfg["chest_t"]).reshape(shp)
+    return partition([("orange", legs), ("navy", navy), ("white", band), ("purple", wing),
+                      ("white", chest), ("purple", None)])
+
+
+def paint_body(S, cfg, P=None):
+    if "wing_t" in cfg:
+        return paint_body_target(S, P, cfg)
     x, y, z = np.abs(S[..., 0]), S[..., 1], S[..., 2]
     shp = x.shape
     yz = np.stack([y.ravel(), z.ravel()], 1)
@@ -144,8 +190,21 @@ def paint_tail(S, cfg):
 
 
 def paint_neck(P, pose):
-    a = pose.neck_pts[0]
-    w = P[..., 1] - (a[1] + 0.5 + (P[..., 2] - a[2]) * 0.55)
+    """White throat in front, purple nape behind, split along the neck's own axis."""
+    best = np.full(P.shape[:-1], np.inf)
+    side = np.zeros(P.shape[:-1])
+    for a, b in zip(pose.neck_pts[:-1], pose.neck_pts[1:]):
+        ab = b - a
+        t = np.clip(((P - a) @ ab) / (ab @ ab), 0, 1)
+        Q = a + t[..., None] * ab
+        tan = ab / np.linalg.norm(ab)
+        back = np.array([0.0, 1.0, 0.0]) - tan[1] * tan
+        back /= np.linalg.norm(back)
+        d = np.linalg.norm(P - Q, axis=-1)
+        closer = d < best
+        best = np.where(closer, d, best)
+        side = np.where(closer, (P - Q) @ back, side)
+    w = side - pose.p.get("nape_offset", 1.5)
     return partition([("white", w), ("purple", None)])
 
 
@@ -174,6 +233,38 @@ def tufts_sdf(H, cfg):
     return d / cfg["flatten"]
 
 
+# ------------------------------------------------------------------ legs (new geometry)
+
+def shins_sdf(P, cfg):
+    """Thin shins (tapered capsules) from the ankles up into the belly, both sides."""
+    d = np.full(P.shape[:-1], 10.0)
+    for s in (1.0, -1.0):
+        m = np.array([s, 1.0, 1.0])
+        d = np.minimum(d, R.capsule_sdf(P, np.multiply(cfg["ankle"], m), np.multiply(cfg["hip"], m),
+                                        *cfg["radius"]))
+    return d
+
+
+def cut_for_shins(body, P, cfg):
+    """Remove the sculpt's short, thick thighs (keep the feet) and round off the belly bottom."""
+    y, z = P[..., 1], P[..., 2]
+    slab = np.maximum(np.maximum(cfg["feet_top"] - z, z - cfg["belly"]), y - cfg["slab_back"])
+    body = smax(body, -slab, cfg.get("belly_soft", 2.5))
+    if "bevel" in cfg:                                     # round off the front of the belly bottom
+        (ya, za), (yb, zb) = cfg["bevel"]
+        nrm = np.array([zb - za, -(yb - ya)]) / np.hypot(yb - ya, zb - za)     # points front-down
+        bev = (y - ya) * nrm[0] + (z - za) * nrm[1]
+        body = smax(body, np.minimum(bev, z - (cfg["feet_top"] + 1.0)), 3.0)
+    if "rump_cut" in cfg:                                  # nothing behind the line of the wing tips
+        (ya, za), (yb, zb), ztop = cfg["rump_cut"]
+        nrm = np.array([za - zb, yb - ya]) / np.hypot(yb - ya, zb - za)       # points back-up
+        cut = (y - ya) * nrm[0] + (z - za) * nrm[1]
+        body = smax(body, np.minimum(np.minimum(cut, ztop - z), z - (cfg["feet_top"] + 1.0)), 2.0)
+    keep = rounded_slab(P[..., 0], z, cfg["belly_half"], cfg["belly"], cfg["belly_rc"])
+    feet = z - (cfg["feet_top"] + 1.0)                     # leave the feet alone
+    return np.maximum(body, np.minimum(keep, feet))
+
+
 # ------------------------------------------------------------------ assembly
 
 def evaluate(src, pose, P, paint_cfg, tuft_cfg):
@@ -187,30 +278,45 @@ def evaluate(src, pose, P, paint_cfg, tuft_cfg):
     body = np.maximum(body, -np.maximum(Sb[..., 2] - 11.0, np.abs(Sb[..., 0]) - 6.0))
     # head (+ cheek tufts in head-local coordinates)
     Sh = pose.head_src(P)
-    head = np.maximum(src(Sh), r_head(Sh)) * pose.sh
+    head = np.maximum(src(Sh), r_head(Sh))
     Hh = head_local(Sh)
+    crest = pose.p.get("crest_trim")                  # trim the sculpt's crest off the back of the head
+    if crest:
+        rr = np.linalg.norm(Hh, axis=-1)
+        head = smax(head, -np.maximum(crest[0] - Hh[..., 1], crest[1] - rr), 1.0)
+    head = head * pose.sh
     tuft = tufts_sdf(Hh, tuft_cfg) * pose.sh
     # tail
     St = pose.tail_src(P)
     tail = np.maximum(src(St), r_tail(St)) * float(np.mean(pose.p["tail_scale"]))
     # neck
     neck = pose.neck_sdf(P)
+    # new shins
+    shins = pose.p.get("shins")
+    if shins:
+        body = cut_for_shins(body, P, shins)
+        leg = shins_sdf(P, shins)
 
     U = np.minimum(body, head)
     U = smin(U, neck, 2.5)
+    if shins:
+        U = smin(U, leg, shins["blend"])
     U = smin(U, tail, 2.0)
     U = smin(U, tuft, 1.0)
     U = np.maximum(U, -P[..., 2])                       # flat bottom on the build plate
 
     pieces = {"body": body, "head": head, "tail": tail, "neck": neck, "tuft": tuft}
+    if shins:
+        pieces["leg"] = leg
     names = list(pieces)
     D = np.stack([pieces[n] for n in names])
     paints = {
-        "body": paint_body(Sb, paint_cfg),
+        "body": paint_body(Sb, paint_cfg, P),
         "head": paint_head(Hh, paint_cfg),
         "tail": paint_tail(St, paint_cfg),
         "neck": paint_neck(P, pose),
-        "tuft": {"navy": np.full(P.shape[:-1], -1.0)},
+        "tuft": {"purple": np.full(P.shape[:-1], -1.0)},
+        "leg": {"orange": np.full(P.shape[:-1], -1.0)},
     }
     G = {c: np.full(P.shape[:-1], 1e3, np.float32) for c in NAMES}
     for i, n in enumerate(names):

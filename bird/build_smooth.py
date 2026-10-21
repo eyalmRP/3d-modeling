@@ -23,25 +23,45 @@ import stl_repose as R
 from build_print import overlap_check, write_3mf
 
 POSE = {
-    # head turned forward, beak pitched down, shortened and curved like the sheet's side view
-    "head_pitch": 25, "beak_scale": 0.8, "beak_bend": 5.0,
-    # a slimmer, slightly tapered neck rising into the back of the head
-    "neck_offset": [-0.9, 11.0, 22.0], "neck_radius": [5.4, 4.8, 4.8], "neck_via": [[0, -1.0, 12]],
-    "body_top": 52.0,
-    # upper body leaned back so it stands upright
-    "body_tilt": 13, "body_pivot": [-5, 21],
-    # tail: steeper, shorter, narrower, and turned so the feather fan shows from the side
-    "tail_axis": [0, 0.5, 0.866], "tail_root": [0, 22, 27], "tail_scale": [0.7, 0.6], "tail_roll": 90,
-    # longer legs, brought in under the body; feet turned forward and set back
-    "leg_stretch": [6.0, 6.0, 16.0], "leg_narrow": 5.0,
-    "foot_twist": -47, "foot_shift": 10.0, "foot_shift_zone": [3.0, 25.0],
+    # head turned forward, beak pitched down, shortened and curved like the sheet's side view;
+    # the sculpt's crest is trimmed off the back of the head
+    "head_pitch": 22, "beak_scale": 0.8, "beak_bend": 6.0, "crest_trim": [15.0, 21.0],
+    "neck_offset": [-0.9, 11.0, 22.0], "body_top": 52.0,
+    # a deep neck (side view) that is narrower side to side, white throat in front, purple nape behind
+    "neck_path": [[-26, 56], [-24, 68], [-18, 79], [-8, 86]], "neck_radius": [9.5, 9.5, 9.0, 7.0],
+    "neck_xscale": 1.35, "nape_offset": 5.5,
+    # upper body leaned back so it stands upright; wing tips and rump drawn out backwards
+    "body_tilt": 13, "body_pivot": [-5, 21], "rump_stretch": [-8.0, 0.6, 18.0, 26.0, 48.0, 62.0],
+    # tail: comes out from under the wing tips, shorter, narrower, turned so the fan shows from the side
+    "tail_axis": [0, 0.643, 0.766], "tail_root": [0, 22, 27], "tail_root_target": [0.0, 8.0, 38.0],
+    "tail_scale": [0.62, 0.6], "tail_roll": 90,
+    # feet: brought in under the body, turned forward, back toes lowered onto the ground
+    "leg_stretch": [6.0, 6.0, 16.0], "leg_narrow": 8.0,
+    "foot_twist": -47, "foot_shift": 2.0, "foot_shift_zone": [3.0, 25.0],
+    "hallux_drop": [-6.0, -1.0, 6.0, 10.0, 4.0],
+    # long thin shins replace the sculpt's short thighs; the belly bottom is rounded off
+    "shins": {"ankle": [11.4, -9.5, 9.8], "hip": [9.0, -5.0, 30.0], "radius": [2.7, 2.5], "blend": 1.5,
+              "feet_top": 10.5, "belly": 24.0, "slab_back": 9.0, "belly_half": 20.0, "belly_rc": 14.0,
+              "belly_soft": 2.5, "bevel": [[-34, 36], [-20, 24]], "rump_cut": [[6, 48], [26, 22], 52.0]},
 }
 # cheek tufts: a fan of three curled feathers on each side of the head (head-local, mm)
-TUFTS = {"flatten": 1.7, "blend": 2.2, "feathers": [
-    [[11.0, 13.0, -2.5, 3.2], [19.0, 16.5, 0.5, 2.5], [23.5, 18.0, 4.0, 1.5]],
-    [[11.0, 13.0, -3.5, 3.2], [20.0, 16.5, -3.5, 2.6], [25.5, 17.5, -4.0, 1.6]],
-    [[11.0, 13.0, -4.5, 3.0], [18.5, 16.5, -8.0, 2.4], [22.0, 17.5, -12.0, 1.4]]]}
-PAINT = dict(SP.PAINT, brow_cap_z=9.0, lid_level=0.08)
+TUFTS = {"flatten": 1.7, "blend": 2.8, "feathers": [
+    [[11.0, 13.0, -2.5, 3.2], [19.0, 16.5, 0.5, 2.5], [22.1, 17.6, 3.0, 1.6]],
+    [[11.0, 13.0, -3.5, 3.2], [20.0, 16.5, -3.5, 2.6], [23.9, 17.2, -3.85, 1.7]],
+    [[11.0, 13.0, -4.5, 3.0], [18.5, 16.5, -8.0, 2.4], [21.0, 17.2, -10.8, 1.5]]]}
+PAINT = dict(
+    SP.PAINT, brow_cap_z=9.0, lid_level=0.08,
+    # bigger whites of the eyes, lids only over the eyeballs
+    eye_grow=3.5, eye_back=0.9, lid_grow=1.0, lid_ring=1.4, lid_back=3.0,
+    # body colors laid out on the side view (y, z in mm): the wing outline, the white band between
+    # the purple coverts and the navy primaries (two points, half width, scallop depth and pitch),
+    # and the white chest and belly in front of the back line
+    wing_x=9.0, wing_wrap=[11.0, 1.6],
+    wing_t=[[-21, 66], [-24.6, 58], [-24.6, 52], [-23, 47], [-20, 43.5], [-12, 36.4], [-2, 30.5], [12, 26],
+            [24, 24], [28, 25], [14, 44], [3, 56], [-8, 68]],
+    band_t=[[-19, 41], [9, 48.5], 2.3, 1.8, 6.0],
+    chest_t=[[-60, 70], [-20, 70], [-20, 62], [-12, 50], [-3, 40], [6, 30], [12, 20], [12, 10], [-60, 10]],
+)
 BOUNDS = ((-45.0, 45.0), (-80.0, 80.0), (0.0, 125.0))
 
 
